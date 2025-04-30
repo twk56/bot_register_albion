@@ -273,6 +273,42 @@ async def remove_user(interaction: discord.Interaction, user: discord.Member):
         ephemeral=True
     )
 
+@tree.command(name="cleanup_roles", description="ลบ Role ผู้ใช้ที่ไม่ได้อยู่ในกิลด์แล้ว (เฉพาะแอดมิน)")
+async def cleanup_roles(interaction: discord.Interaction):
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("เฉพาะผู้ดูแลเท่านั้นที่ใช้คำสั่งนี้ได้", ephemeral=True)
+        return
+
+    guild_setup = load_guild_setup(interaction.guild_id)
+    user_data = load_user_data(interaction.guild_id)
+
+    if not guild_setup["guild_token"] or not guild_setup["discord_role"]:
+        await interaction.response.send_message("ยังไม่ได้ตั้งค่ากิลด์และยศ", ephemeral=True)
+        return
+
+    try:
+        member_list = guild_member_list(guild_setup["guild_token"])
+        guild_igns = {m["Name"].lower() for m in member_list}
+        role = get(interaction.guild.roles, name=guild_setup["discord_role"])
+        removed = 0
+
+        for user_id, data in list(user_data.items()):
+            ign = data["ign"].lower()
+            if ign not in guild_igns:
+                member = await interaction.guild.fetch_member(user_id)
+                if member and role in member.roles:
+                    await member.remove_roles(role)
+                user_data.pop(user_id)
+                removed += 1
+
+        save_user_data(interaction.guild_id, user_data)
+        await interaction.response.send_message(f"ลบ Role และข้อมูลออก {removed} คนเรียบร้อยแล้ว", ephemeral=True)
+
+    except Exception as e:
+        logging.error(f"Error in cleanup_roles for guild_id {interaction.guild_id}: {str(e)}")
+        await send_error_webhook(e, "cleanup_roles", interaction.guild_id)
+        await interaction.response.send_message(f"เกิดข้อผิดพลาด: {str(e)}", ephemeral=True)
+
 
 
 @tree.command(name="reset", description="รีเซ็ตการตั้งค่ากิลด์ (สำหรับผู้ดูแลเท่านั้น)")
